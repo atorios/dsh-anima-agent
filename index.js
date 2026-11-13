@@ -102,7 +102,7 @@ const DESCRIPTION = [
   '',
   'Actions:',
   '- guide: the local playbook. Installed models, a ready-to-submit workflow, the prompt rules this setup needs, and known failure modes. Read it before the first image of a session.',
-  `- styles: search the bundled NovelAI style catalogue (${styleCount()} prompt strings, each with a reference image). Pass \`query\` to filter, or \`preview\` with an ordinal to download that entry's reference image and show it to the user.`,
+  `- styles: search the optional NovelAI style catalogue (${styleCount()} prompt strings, each with a reference image; 0 means the catalogue is empty and style tags are unavailable). Pass \`query\` to filter, or \`preview\` with an ordinal to download that entry's reference image and show it to the user.`,
   '- settings: read the plugin settings, or change them by passing `set` (mode, server address, ComfyUI directory, output directory, timeouts, idle shutdown). Changes apply immediately and persist across restarts. `mode` is "free" (generate from whatever prompt the user gives, no discussion) or "guided" (discuss style choices first).',
   '- status: version, GPU, free VRAM/RAM, queue depth. Start here to confirm ComfyUI is up.',
   '- start_server: launch ComfyUI and wait until it answers. Only needed when it is stopped; every other action starts it automatically on a connection failure.',

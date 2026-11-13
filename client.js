@@ -391,7 +391,7 @@ window.__ModuleLoader__.load({
           h(
             'span',
             { style: S.hint },
-            '勾选后你懂的，要和自由模式一起使用，并在模型选择那里把思考强度选为off',
+            '勾选后你懂的，要和自由模式一起使用，并在模型选择那里把思考强度选为off，推荐使用deepseek-flash官模。第一个新对话被拦截是正常的，通常需要开启2-3个对话就可以正常出图了',
           ),
           penetrateStatus.kind === 'ok' ? h('span', { style: S.ok }, penetrateStatus.text) : null,
           penetrateStatus.kind === 'error' ? h('span', { style: S.bad }, penetrateStatus.text) : null,

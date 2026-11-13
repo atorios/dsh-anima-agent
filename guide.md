@@ -179,58 +179,18 @@ masterpiece, best quality, very aesthetic, absurdres
 | 模式 | 行为 |
 |---|---|
 | `free` 自由模式 | 用户给什么提示词就直接出图，不追问、不确认、不解释 |
-| `guided` 引导模式（默认） | 先问「贴合原作画风」还是「融合画师画风」，按选择走模板或画风库 |
+| `guided` 引导模式（默认） | 先问「贴合原作画风」还是「融合画师画风」，按选择走模板，或询问用户要 @ 的画师 |
 
-## NovelAI 画风目录
+## 融合画师
 
-插件内置了一份 NovelAI v5 画师词典（16,542 条画风串，每条配一张参考图），来自 quicktagcloud。用户想找某种画风时用它：
+用户选「融合画师画风」时，必须问清楚要 @ 哪位画师，不要自己编一个名字：
 
-```
-comfyui{action:"styles", query:"kantoku", limit:5}   → 按关键词搜索，结果显示 tag
-comfyui{action:"styles", tag:"ST-0213"}              → 按 tag 取完整提示词
-comfyui{action:"styles", preview:213}                → 下载该条参考图
-```
+1. 先问：「要 @ 哪位画师？」用户说不清就再问一次。
+2. 仍说不出，建议改用贴合原作画风。
+3. 拿到画师名后，用 `anime style, Japanese anime illustration` 打底，`@画师名` 放在画风锚点位置，其余照常补姿势、场景、光照、质量词。
+4. 写成完整提示词发给用户确认，确认后出图。
 
-搜索返回的提示词**已经转成 Anima 能用的写法**，可以直接拿去出图。
-
-### 用 tag 指定画风
-
-每条画风都有一个稳定 tag，格式 `ST-` 加四位序号，例如 `ST-0213`。用户可以直接说：
-
-> 帮我生成一个爱蜜莉雅，画风选 ST-0213
-
-处理流程：
-
-1. 调 `comfyui{action:"styles", tag:"ST-0213"}` 拿到该条的正向和负向
-2. 把它的 `@画师` 和风格标签，与用户的角色要求合并成一条提示词：
-   - `masterpiece, best quality, score_7, safe` 只保留一次
-   - **角色标签放在画风标签之前**（角色决定画谁，画师决定怎么画）
-   - 画风条目里已有的 `year 20xx`、风格词照抄
-3. 按情况补上构图标签（`1girl, solo, upper body, looking at viewer`）
-4. 用合并后的提示词出图，并把最终提示词贴给用户
-
-tag 也接受 `213`、`#213`、`st213` 这些写法，不用严格按格式说。
-
-### 转换规则
-
-NovelAI 和 Anima 的语法不同，插件自动做了这些处理：
-
-| NovelAI | Anima | 说明 |
-|---|---|---|
-| `artist:kantoku` | `@kantoku` | 画师必须加 `@` 才生效 |
-| `1.39::artist:ixy::` | `@ixy` | 权重块拆掉，权重不保留 |
-| `-1.5::realistic face::` | 移入负向 | 负权重转成负向提示词 |
-| `artist:fuka (kantoku)` | `@fuka \(kantoku\)` | 括号是画师消歧符，转义成字面量 |
-| `1.39::ixy::`（无 artist: 前缀） | `@ixy` | 整条没有 artist: 时，把权重块里的名字当画师 |
-| `year 2025`、`very aesthetic` | 保留 `year`，丢弃 `very aesthetic` | 质量词由 Anima 自己的 `score_7` 体系负责 |
-
-正向统一以 `masterpiece, best quality, score_7, safe` 开头，负向用 Anima 标准词。
-
-### 已知不完美
-
-原始数据是社区整理的，写法不统一。有些条目的画师名没加 `artist:` 前缀、又混在普通标签里，转换后可能残留少量重复标签（例如同时出现 `@muchi maro` 和 `muchi_maro`）。这不影响出图，看到时忽略即可。
-
-画师串里通常混了十几个画师，Anima 不一定都认识，认不出的会被当普通词忽略——不会报错。
+画师只有加了 `@` 才会生效，例如 `@kantoku`；带消歧括号的写成 `@fuka \(kantoku\)`。
 
 ## 服务启动
 

@@ -1,6 +1,7 @@
-runtime-cache/
+﻿runtime-cache/
 *.settings.json
 style-cache/
 .env*
 node_modules/
 *.log
+*.sha256
