@@ -7,49 +7,49 @@
       "name": "runtime-v1.tar.gz.part001",
       "bytes": 1073741824,
       "sha256": "31a6045ccf4014169db8dc6b9754c50044675a70b262ac130024deeb8020b882",
-      "url": "https://github.com/atorios/dsh-anima-agent/releases/download/runtime-v1/runtime-v1.tar.gz.part001"
+      "url": "https://api.github.com/repos/atorios/dsh-anima-agent/releases/assets/742246024"
     },
     {
       "name": "runtime-v1.tar.gz.part002",
       "bytes": 1073741824,
       "sha256": "5024d65fdb77d6c494adc9ea2f913507035d0f2025121f335de71a4a6402c9cb",
-      "url": "https://github.com/atorios/dsh-anima-agent/releases/download/runtime-v1/runtime-v1.tar.gz.part002"
+      "url": "https://api.github.com/repos/atorios/dsh-anima-agent/releases/assets/742183013"
     },
     {
       "name": "runtime-v1.tar.gz.part003",
       "bytes": 1073741824,
       "sha256": "c86bf099663ca76d895c86012b89d0503da0c30cb13e7e35731f89a1a98c6131",
-      "url": "https://github.com/atorios/dsh-anima-agent/releases/download/runtime-v1/runtime-v1.tar.gz.part003"
+      "url": "https://api.github.com/repos/atorios/dsh-anima-agent/releases/assets/742183004"
     },
     {
       "name": "runtime-v1.tar.gz.part004",
       "bytes": 1073741824,
       "sha256": "f43043ba6f2d283d25d9dc8b81749467855e3a33ecbb461f03d9ee2a56ad931e",
-      "url": "https://github.com/atorios/dsh-anima-agent/releases/download/runtime-v1/runtime-v1.tar.gz.part004"
+      "url": "https://api.github.com/repos/atorios/dsh-anima-agent/releases/assets/742183003"
     },
     {
       "name": "runtime-v1.tar.gz.part005",
       "bytes": 1073741824,
       "sha256": "fcb90424dab1f895b9eec5b99c809d76d234b382f0f7123c93a7f2bba8a923f2",
-      "url": "https://github.com/atorios/dsh-anima-agent/releases/download/runtime-v1/runtime-v1.tar.gz.part005"
+      "url": "https://api.github.com/repos/atorios/dsh-anima-agent/releases/assets/742183015"
     },
     {
       "name": "runtime-v1.tar.gz.part006",
       "bytes": 1073741824,
       "sha256": "183fbd386af60ae33b417fffa4a9b704c150f8831adfea5a36bd45650f37b606",
-      "url": "https://github.com/atorios/dsh-anima-agent/releases/download/runtime-v1/runtime-v1.tar.gz.part006"
+      "url": "https://api.github.com/repos/atorios/dsh-anima-agent/releases/assets/742254259"
     },
     {
       "name": "runtime-v1.tar.gz.part007",
       "bytes": 1073741824,
       "sha256": "23324d77558ff6ae2cd7e1611c3173f566654cb6650479a14c697ba00fd3541f",
-      "url": "https://github.com/atorios/dsh-anima-agent/releases/download/runtime-v1/runtime-v1.tar.gz.part007"
+      "url": "https://api.github.com/repos/atorios/dsh-anima-agent/releases/assets/742263419"
     },
     {
       "name": "runtime-v1.tar.gz.part008",
       "bytes": 751853188,
       "sha256": "495881da485be5efafeb7f6943febfc55d1f6a9764558b201c77678e61334b48",
-      "url": "https://github.com/atorios/dsh-anima-agent/releases/download/runtime-v1/runtime-v1.tar.gz.part008"
+      "url": "https://api.github.com/repos/atorios/dsh-anima-agent/releases/assets/742225239"
     }
   ]
 }

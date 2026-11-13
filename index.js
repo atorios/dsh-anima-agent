@@ -236,6 +236,7 @@ export function apply(ctx, config = {}) {
   };
 
   let client = new ComfyClient(settings);
+  ctx.effect(() => () => { client.stopOwned().catch(() => {}); });
   // Installing this bundle authorizes automatic preparation; errors remain visible.
   ready().catch(() => {});
   const attachments = ctx.get('attachments');
@@ -275,7 +276,9 @@ export function apply(ctx, config = {}) {
     writeFileSync(SETTINGS_FILE, JSON.stringify(merged, null, 2), 'utf8');
     Object.assign(settings, applied);
     if (applied.comfyDir) ensureModelPaths(settings.comfyDir);
-    client = new ComfyClient(settings);
+    const next = new ComfyClient(settings);
+    const { _starting, spawnedPid, lastActivity } = client;
+    Object.assign(client, next, { _starting, spawnedPid, lastActivity });
     return applied;
   };
 
