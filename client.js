@@ -477,9 +477,17 @@ window.__ModuleLoader__.load({
 
     function RuntimePreparation() {
       const [runtime, setRuntime] = useState(null);
+      const [speed, setSpeed] = useState(0);
       useEffect(() => {
         let disposed = false;
-        const load = () => fetch(ENDPOINT).then(r => r.json()).then(data => { if (!disposed) setRuntime(data.runtime); }).catch(() => {});
+        let previous = null;
+        const load = () => fetch(ENDPOINT).then(r => r.json()).then(data => {
+          if (disposed) return;
+          const now = Date.now();
+          if (previous && data.runtime) setSpeed(Math.max(0, (data.runtime.received - previous.bytes) * 1000 / (now - previous.time)));
+          if (data.runtime) previous = { bytes: data.runtime.received, time: now };
+          setRuntime(data.runtime);
+        }).catch(() => {});
         load();
         const timer = setInterval(load, 2000);
         return () => { disposed = true; clearInterval(timer); };
@@ -488,6 +496,7 @@ window.__ModuleLoader__.load({
       return h('div', { style: { ...S.row, padding: 10, border: '1px solid var(--dsw-alias-border-l1, #dcdfe5)', borderRadius: 8 } },
         h('span', { style: S.label }, runtime.phase === 'ready' ? '绘画环境已就绪' : '正在自动准备绘画环境'),
         h('span', { style: S.hint }, `${runtime.phase || ''} · ${((runtime.received || 0) / 1073741824).toFixed(2)} / ${((runtime.total || 0) / 1073741824).toFixed(2)} GiB`),
+        runtime.phase === 'downloading' ? h('span', { style: S.hint }, `下载速度 ${(speed / 1048576).toFixed(2)} MiB/s`) : null,
         runtime.total > 0 && runtime.phase !== 'ready' ? h('progress', { value: runtime.received || 0, max: runtime.total, style: { width: '100%' } }) : null,
         runtime.error ? h('span', { style: S.bad }, runtime.error) : null,
         h('span', { style: S.hint }, '安装后自动完成准备，无需 BAT 或手动配置；首次出图会等待环境就绪。'),

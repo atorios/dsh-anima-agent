@@ -39,16 +39,23 @@ async function hashFile(file, signal) {
 }
 
 // Exported separately so download behavior can be tested without extracting a runtime.
-export async function downloadPart({ part, destination, fetchImpl = globalThis.fetch, tokenProvider,
-  signal, onProgress = () => {}, retryDelayMs = 500, connectionTimeoutMs = 30_000, idleTimeoutMs = 30_000 }) {
+export async function downloadPart(options) {
+  return downloadRange(options);
+}
+
+async function downloadRange({ part, destination, fetchImpl = globalThis.fetch, tokenProvider,
+  signal, onProgress = () => {}, retryDelayMs = 500, connectionTimeoutMs = 30_000, idleTimeoutMs = 30_000 }, segment) {
   if (!Number.isSafeInteger(part.bytes) || part.bytes <= 0 || !sha256.test(part.sha256)) throw new Error('Invalid runtime part');
+  const start = segment ? segment[0] : 0;
+  const end = segment ? segment[1] : part.bytes - 1;
+  const bytes = end - start + 1;
   await mkdir(path.dirname(destination), { recursive: true });
   for (let attempt = 0; attempt <= 3; attempt++) {
     signal?.throwIfAborted();
     let offset = await fileSize(destination);
-    if (offset > part.bytes) { await rm(destination); offset = 0; }
-    if (offset === part.bytes) {
-      if (await hashFile(destination, signal) === part.sha256.toLowerCase()) { onProgress(offset); return; }
+    if (offset > bytes) { await rm(destination); offset = 0; }
+    if (offset === bytes) {
+      if (segment || await hashFile(destination, signal) === part.sha256.toLowerCase()) { onProgress(offset); return; }
       await rm(destination); offset = 0;
     }
     onProgress(offset);
@@ -68,17 +75,18 @@ export async function downloadPart({ part, destination, fetchImpl = globalThis.f
         const token = tokenProvider ? await waitFor(tokenProvider(), signal, connectionTimeoutMs, 'GitHub token') : null;
         if (token) headers.Authorization = `Bearer ${token}`;
       }
-      if (offset) headers.Range = `bytes=${offset}-`;
+      if (segment) headers.Range = `bytes=${start + offset}-${end}`;
+      else if (offset) headers.Range = `bytes=${offset}-`;
       // Native fetch strips Authorization on cross-origin redirects.
       const response = await waitFor(fetchImpl(url.href, { headers, signal: controller.signal, redirect: 'follow' }),
         signal, connectionTimeoutMs, 'Runtime connection');
       if (response.status === 206) {
         const range = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(response.headers.get('content-range') || '');
-        if (!range || Number(range[1]) !== offset || Number(range[2]) !== part.bytes - 1 || Number(range[3]) !== part.bytes) {
+        if (!range || Number(range[1]) !== start + offset || Number(range[2]) !== end || Number(range[3]) !== part.bytes) {
           fatal = true;
           throw new Error(`Invalid Content-Range for ${part.name}`);
         }
-      } else if (response.status === 200) {
+      } else if (response.status === 200 && !segment) {
         offset = 0;
         onProgress(0);
       } else {
@@ -91,7 +99,7 @@ export async function downloadPart({ part, destination, fetchImpl = globalThis.f
       while (true) {
         const { done, value } = await waitFor(reader.read(), signal, idleTimeoutMs, 'Runtime read');
         if (done) break;
-        if (offset + value.byteLength > part.bytes) { fatal = true; throw new Error(`Oversized runtime part: ${part.name}`); }
+        if (offset + value.byteLength > bytes) { fatal = true; throw new Error(`Oversized runtime part: ${part.name}`); }
         // FileHandle.write can complete only part of a buffer.
         let written = 0;
         while (written < value.byteLength) written += (await handle.write(value, written, value.byteLength - written)).bytesWritten;
@@ -99,8 +107,8 @@ export async function downloadPart({ part, destination, fetchImpl = globalThis.f
         onProgress(offset);
       }
       await handle.close(); handle = null;
-      if (offset !== part.bytes) throw new Error(`Incomplete runtime part: ${part.name}`);
-      if (await hashFile(destination, signal) !== part.sha256.toLowerCase()) {
+      if (offset !== bytes) throw new Error(`Incomplete runtime part: ${part.name}`);
+      if (!segment && await hashFile(destination, signal) !== part.sha256.toLowerCase()) {
         fatal = true;
         await rm(destination);
         throw new Error(`SHA-256 mismatch: ${part.name}`);
@@ -117,6 +125,53 @@ export async function downloadPart({ part, destination, fetchImpl = globalThis.f
     }
     await delay(retryDelayMs * (attempt + 1), undefined, { signal });
   }
+}
+
+export async function downloadSegmentedPart({ segmentThresholdBytes = 64 * 1024 * 1024, ...options }) {
+  const { part, destination, signal, onProgress = () => {} } = options;
+  if (!Number.isSafeInteger(part.bytes) || part.bytes <= 0 || !sha256.test(part.sha256)) throw new Error('Invalid runtime part');
+  const size = await fileSize(destination);
+  // Keep the old single-file cache resumable, without discarding its downloaded prefix.
+  if (part.bytes < segmentThresholdBytes || part.bytes < 2 || size > 0) return downloadPart(options);
+  const mid = Math.floor(part.bytes / 2);
+  const segments = [`${destination}.segment0`, `${destination}.segment1`];
+  const received = [0, 0];
+  const controller = new AbortController();
+  const abort = () => controller.abort(signal.reason || abortError());
+  signal?.addEventListener('abort', abort, { once: true });
+  if (signal?.aborted) abort();
+  const downloads = [[0, mid - 1], [mid, part.bytes - 1]].map((range, index) => downloadRange({
+    ...options, destination: segments[index], signal: controller.signal,
+    onProgress: bytes => { received[index] = bytes; onProgress(received[0] + received[1]); },
+  }, range));
+  try {
+    await Promise.all(downloads);
+  } catch (error) {
+    controller.abort(error);
+    await Promise.allSettled(downloads);
+    throw error;
+  } finally {
+    signal?.removeEventListener('abort', abort);
+  }
+  signal?.throwIfAborted();
+  const output = await open(destination, 'w');
+  const hash = createHash('sha256');
+  try {
+    for (const segment of segments) {
+      for await (const chunk of createReadStream(segment, { signal })) {
+        hash.update(chunk);
+        let written = 0;
+        while (written < chunk.length) written += (await output.write(chunk, written, chunk.length - written)).bytesWritten;
+      }
+    }
+    if (hash.digest('hex') !== part.sha256.toLowerCase()) throw new Error(`SHA-256 mismatch: ${part.name}`);
+  } catch (error) {
+    await output.close();
+    await rm(destination, { force: true });
+    throw error;
+  }
+  await output.close();
+  await Promise.all(segments.map(segment => rm(segment)));
 }
 
 function safeArchivePath(name, extractedRoot) {
@@ -227,7 +282,8 @@ async function patchVenv(cfgPath, payload) {
   await writeFile(cfgPath, cfg);
 }
 
-export function createRuntimeInstaller({ root, manifest, fetchImpl = globalThis.fetch, tokenProvider }) {
+export function createRuntimeInstaller({ root, manifest, fetchImpl = globalThis.fetch, tokenProvider,
+  segmentThresholdBytes = 64 * 1024 * 1024 }) {
   if (!manifest || !component.test(manifest.version) || !component.test(manifest.extractedRoot)
     || !sha256.test(manifest.archiveSha256) || !Array.isArray(manifest.parts) || !manifest.parts.length
     || manifest.parts.some(p => !component.test(p.name) || ['ready', 'staging', 'payload.tar.gz'].includes(p.name.toLowerCase())
@@ -266,12 +322,13 @@ export function createRuntimeInstaller({ root, manifest, fetchImpl = globalThis.
       signal.addEventListener('abort', abort, { once: true });
       if (signal.aborted) abort();
       let next = 0;
-      const downloads = Array.from({ length: Math.min(4, manifest.parts.length) }, async () => {
+      const downloads = Array.from({ length: Math.min(8, manifest.parts.length) }, async () => {
         while (next < manifest.parts.length) {
           batch.signal.throwIfAborted();
           const index = next++;
           const part = manifest.parts[index];
-          await downloadPart({ part, destination: path.join(cache, part.name), fetchImpl, tokenProvider, signal: batch.signal,
+          await downloadSegmentedPart({ part, destination: path.join(cache, part.name), fetchImpl, tokenProvider,
+            segmentThresholdBytes, signal: batch.signal,
             onProgress: bytes => {
               received[index] = bytes;
               state.received = received.reduce((sum, value) => sum + value, 0);

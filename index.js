@@ -6,7 +6,9 @@
  */
 
 import { readFile } from 'node:fs/promises';
-import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { Transform } from 'node:stream';
+import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pipeline } from 'node:stream/promises';
@@ -626,13 +628,21 @@ export function apply(ctx, config = {}) {
             return;
           }
           const lorasDir = join(modelRoots[modelRoots.length - 1], 'loras');
+          const partial = join(lorasDir, `.${randomUUID()}.upload`);
+          let written = 0;
           try {
             mkdirSync(lorasDir, { recursive: true });
-            await pipeline(req, createWriteStream(join(lorasDir, name)));
-            const written = statSync(join(lorasDir, name)).size;
+            const limit = new Transform({ transform(chunk, encoding, done) {
+              written += chunk.length;
+              if (written > MAX_UPLOAD_BYTES) done(new Error('文件超过 2 GB'));
+              else done(null, chunk);
+            } });
+            await pipeline(req, limit, createWriteStream(partial, { flags: 'wx' }));
+            renameSync(partial, join(lorasDir, name));
             reply(200, { ok: true, name, sizeMb: Math.round(written / 1024 / 1024) });
           } catch (error) {
-            reply(500, { error: `写入失败：${error?.message || error}` });
+            try { unlinkSync(partial); } catch {}
+            reply(written > MAX_UPLOAD_BYTES ? 413 : 500, { error: `写入失败：${error?.message || error}` });
           }
         },
       }),
