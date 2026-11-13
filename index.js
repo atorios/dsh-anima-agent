@@ -556,6 +556,7 @@ export function apply(ctx, config = {}) {
           // both so the panel matches what ComfyUI can actually load.
           const modelRoots = [
             ...(settings.comfyDir ? [join(settings.comfyDir, 'models')] : []),
+            ...(runtimeApplied ? [join(settings.comfyDir, '_dsh_plugin', 'comfyui-agent', 'models')] : []),
             join(PLUGIN_DIR, 'models'),
           ];
 
