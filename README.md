@@ -35,8 +35,4 @@ DeepSeek Harness 的 ComfyUI 绘画插件（Windows x64 / NVIDIA）。
 
 **模型不进仓库。** 运行环境与权重（ComfyUI、Anima 底模、Qwen 文本编码器、VAE、两个官方 LoRA，合计 7.7 GiB）挂在 release `runtime-v1` 的 8 个分片里，由 `runtime-manifest.json` 描述。下载走 HTTP Range 续传，单片与整包双重 SHA-256 校验，tar 预检防路径穿越；就绪后不再联网，失败下次自动续传。
 
-**凭据可选。** 仓库与运行包公开，匿名即可下载。`GH_TOKEN` / `GITHUB_TOKEN` 或已登录的 GitHub CLI 只用于避开 API 速率限制，不会写入源码或缓存，也不会发往 `api.github.com` 以外的地址。
-
-**画风库不含在内。** `styles.json` 为空（`{"entries": []}`），`styles` 返回 0 条，融合画师按用户口述构建。自行放回画风数据需自负授权。
-
 **授权。** ComfyUI、Python、PyTorch、CUDA、Anima 模型分别遵循各自许可；本仓库只包含插件源码，不构成对上述组件的再分发授权。
