@@ -214,6 +214,7 @@ export function apply(ctx, config = {}) {
   // A file written by the settings action overrides the bundle row, so values
   // survive restarts without editing the profile patch.
   Object.assign(settings, loadOverrides());
+  let externalRuntime = Boolean(config.comfyDir || loadOverrides().comfyDir);
   // No absolute paths ship with the plugin: when the output directory is unset,
   // derive it from the detected ComfyUI root so a copied folder just works.
   if (!settings.outputDir && settings.comfyDir) {
@@ -227,8 +228,9 @@ export function apply(ctx, config = {}) {
   ctx.effect(() => () => runtime.dispose());
   let runtimeApplied = false;
   const ready = async () => {
+    if (externalRuntime) return;
     const paths = await runtime.ensure();
-    if (!runtimeApplied) {
+    if (!runtimeApplied && !externalRuntime) {
       Object.assign(settings, { comfyDir: paths.comfyDir, pythonPath: paths.pythonPath, outputDir: paths.outputDir });
       client = new ComfyClient(settings);
       runtimeApplied = true;
@@ -275,6 +277,7 @@ export function apply(ctx, config = {}) {
     const merged = { ...loadOverrides(), ...applied };
     writeFileSync(SETTINGS_FILE, JSON.stringify(merged, null, 2), 'utf8');
     Object.assign(settings, applied);
+    if (Object.hasOwn(applied, 'comfyDir')) externalRuntime = Boolean(applied.comfyDir);
     if (applied.comfyDir) ensureModelPaths(settings.comfyDir);
     const next = new ComfyClient(settings);
     const { _starting, spawnedPid, lastActivity } = client;
@@ -284,7 +287,7 @@ export function apply(ctx, config = {}) {
 
   const run = async (args) => {
     const action = text(args?.action || 'status');
-    if (!['guide', 'styles', 'settings'].includes(action)) await ready();
+    if (!['guide', 'styles', 'settings', 'stop_server', 'interrupt', 'free_memory'].includes(action)) await ready();
     switch (action) {
       case 'guide':
         return readGuide();

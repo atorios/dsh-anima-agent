@@ -259,11 +259,33 @@ export function createRuntimeInstaller({ root, manifest, fetchImpl = globalThis.
       } catch (error) { if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error; }
       await mkdir(cache, { recursive: true });
       state.phase = 'downloading';
-      let completed = 0;
-      for (const part of manifest.parts) {
-        await downloadPart({ part, destination: path.join(cache, part.name), fetchImpl, tokenProvider, signal,
-          onProgress: bytes => { state.received = completed + bytes; } });
-        completed += part.bytes;
+      const received = manifest.parts.map(() => 0);
+      state.received = 0;
+      const batch = new AbortController();
+      const abort = () => batch.abort(signal.reason || abortError());
+      signal.addEventListener('abort', abort, { once: true });
+      if (signal.aborted) abort();
+      let next = 0;
+      const downloads = Array.from({ length: Math.min(4, manifest.parts.length) }, async () => {
+        while (next < manifest.parts.length) {
+          batch.signal.throwIfAborted();
+          const index = next++;
+          const part = manifest.parts[index];
+          await downloadPart({ part, destination: path.join(cache, part.name), fetchImpl, tokenProvider, signal: batch.signal,
+            onProgress: bytes => {
+              received[index] = bytes;
+              state.received = received.reduce((sum, value) => sum + value, 0);
+            } });
+        }
+      });
+      try {
+        await Promise.all(downloads);
+      } catch (error) {
+        batch.abort(error);
+        await Promise.allSettled(downloads);
+        throw error;
+      } finally {
+        signal.removeEventListener('abort', abort);
       }
       state.phase = 'verifying';
       const archive = path.join(cache, 'payload.tar.gz');

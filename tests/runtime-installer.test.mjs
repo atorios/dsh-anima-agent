@@ -146,6 +146,84 @@ test('ensure shares promise, exposes error state, dispose aborts without unhandl
   await assert.rejects(retry, /HTTP 404/);
 });
 
+test('installer downloads at most four parts concurrently and merges in manifest order', { timeout: 5000 }, async t => {
+  const root = await workspace(t);
+  const bodies = Array.from({ length: 7 }, (_, index) => Buffer.from(`part-${index}`));
+  const parts = bodies.map((value, index) => ({ name: `runtime.part00${index + 1}`, bytes: value.length,
+    sha256: digest(value), url: `https://example.test/${index}` }));
+  const releases = [];
+  let active = 0, maximum = 0, started = 0;
+  const installer = createRuntimeInstaller({ root,
+    manifest: { version: 'v1', extractedRoot: 'runtime', archiveSha256: digest('wrong archive'), parts },
+    fetchImpl: async url => {
+      const index = Number(new URL(url).pathname.slice(1));
+      started++;
+      maximum = Math.max(maximum, ++active);
+      await new Promise(resolve => { releases[index] = resolve; });
+      active--;
+      return new Response(bodies[index]);
+    } });
+  const pending = assert.rejects(installer.ensure(), /archive SHA-256 mismatch/);
+  let previous = 0;
+  async function until(check) {
+    while (!check()) {
+      const { received } = installer.snapshot();
+      assert.ok(received >= previous, `${received} went backwards from ${previous}`);
+      previous = received;
+      await new Promise(resolve => setImmediate(resolve));
+    }
+  }
+  await until(() => started === 4);
+  assert.equal(maximum, 4);
+  assert.equal(releases.length, 4);
+  releases[3]();
+  await until(() => started === 5);
+  releases[2]();
+  await until(() => started === 6);
+  releases[1]();
+  await until(() => started === 7);
+  for (const index of [6, 5, 4, 0]) {
+    releases[index]();
+    const target = previous + bodies[index].length;
+    await until(() => installer.snapshot().received >= target);
+    previous = installer.snapshot().received;
+  }
+  await pending;
+  assert.equal(maximum, 4);
+  assert.equal(installer.snapshot().received, bodies.reduce((sum, value) => sum + value.length, 0));
+  assert.deepEqual(await readFile(path.join(root, 'runtime-cache', 'v1', 'payload.tar.gz')), Buffer.concat(bodies));
+});
+
+test('part failure aborts sibling downloads but allows another ensure attempt', { timeout: 5000 }, async t => {
+  const root = await workspace(t);
+  const parts = Array.from({ length: 6 }, (_, index) => ({ ...part, name: `runtime.part00${index + 1}`,
+    url: `https://example.test/${index}` }));
+  let calls = 0, aborted = 0, fail;
+  const installer = createRuntimeInstaller({ root,
+    manifest: { version: 'v1', extractedRoot: 'runtime', archiveSha256: digest(body), parts },
+    fetchImpl: async (_url, init) => {
+      calls++;
+      if (calls > 4) return new Response('', { status: 404 });
+      if (calls === 1) {
+        await new Promise(resolve => { fail = resolve; });
+        return new Response('', { status: 404 });
+      }
+      return new Promise((resolve, reject) => {
+        init.signal.addEventListener('abort', () => { aborted++; reject(init.signal.reason); }, { once: true });
+      });
+    } });
+  const first = installer.ensure();
+  while (calls < 4) await new Promise(resolve => setImmediate(resolve));
+  fail();
+  await assert.rejects(first, /HTTP 404/);
+  assert.equal(aborted, 3);
+  assert.equal(calls, 4);
+  assert.equal(installer.snapshot().phase, 'error');
+  await assert.rejects(installer.ensure(), /HTTP 404/);
+  assert.ok(calls > 4);
+  assert.equal(installer.snapshot().phase, 'error');
+});
+
 test('ready version is reused with no network and returns payload-local paths', async t => {
   const root = await workspace(t);
   const payload = path.join(root, 'runtime-cache', 'v1', 'ready', 'ComfyUI-Painting-Local');
