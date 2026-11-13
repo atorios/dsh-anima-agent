@@ -19,7 +19,9 @@ Windows x64 / NVIDIA 环境的 DeepSeek Harness 绘画插件。
 
 ## 凭据
 
-仓库与运行包均为私有，仅授权用户可访问。下载会读取本机 GitHub CLI 已登录凭据或 `GH_TOKEN` / `GITHUB_TOKEN`，不会把凭据写进源码或缓存，也不会把作者凭据交给其他用户。
+仓库与运行包都是**公开**的，匿名即可下载，不需要 GitHub 账号。
+
+`GH_TOKEN` / `GITHUB_TOKEN` 或本机 GitHub CLI 登录是可选的：有凭据时请求会带上 token 以避开 API 速率限制，没有也会照常下载。凭据不会写进源码或缓存，也不会被转发到 `api.github.com` 以外的地址。
 
 ## 文件
 

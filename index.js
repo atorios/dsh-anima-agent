@@ -225,7 +225,10 @@ export function apply(ctx, config = {}) {
   const runtime = createRuntimeInstaller({
     root: PLUGIN_DIR,
     manifest: JSON.parse(readFileSync(join(PLUGIN_DIR, 'runtime-manifest.json'), 'utf8')),
-    tokenProvider: githubToken,
+    // Public repository: a credential is a bonus (rate limits), never a requirement.
+    tokenProvider: async () => {
+      try { return await githubToken(); } catch { return null; }
+    },
   });
   ctx.effect(() => () => runtime.dispose());
   let runtimeApplied = false;
