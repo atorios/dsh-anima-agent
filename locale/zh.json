@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "ComfyUI 智能体",
+    "description": "在 Harness 里直接操作运行中的 ComfyUI：检查服务与显存、列出模型、查询节点接口签名、提交工作流、读回生成结果、释放显存。不需要往 ComfyUI 里安装任何额外代码。"
+  }
+}

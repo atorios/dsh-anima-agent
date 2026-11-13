@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" role="img" aria-label="ComfyUI Agent">
+  <defs>
+    <linearGradient id="cg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7c5cff"/>
+      <stop offset="1" stop-color="#29c7d6"/>
+    </linearGradient>
+  </defs>
+  <rect x="3" y="3" width="42" height="42" rx="11" fill="url(#cg)"/>
+  <path d="M14 33V15h4.6l5.4 9.2 5.4-9.2H34v18h-4.2v-11l-4.6 7.8h-2.4L18.2 22v11z" fill="#0d1117" opacity="0.86"/>
+  <circle cx="35.5" cy="14.5" r="5.5" fill="#0d1117" opacity="0.86"/>
+  <circle cx="35.5" cy="14.5" r="2.4" fill="#7c5cff"/>
+  <path d="M35.5 9.2v1.8M35.5 18v1.8M30.2 14.5h1.8M39 14.5h1.8" stroke="#0d1117" stroke-width="1.4" stroke-linecap="round" opacity="0.86"/>
+</svg>

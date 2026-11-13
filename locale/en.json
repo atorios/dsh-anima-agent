@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "ComfyUI Agent",
+    "description": "Operate a running ComfyUI instance from the Harness: check server health and VRAM, list models, inspect node signatures, queue workflows, read back generated images, and free memory. Installs no extra code into ComfyUI itself."
+  }
+}

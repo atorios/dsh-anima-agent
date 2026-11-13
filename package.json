@@ -1,0 +1,41 @@
+{
+  "name": "@local/comfyui-agent",
+  "version": "1.1.4",
+  "private": true,
+  "type": "module",
+  "description": "Operate a running ComfyUI instance from the Harness: inspect it, build workflows, queue them, and read back results.",
+  "exports": {
+    ".": "./index.js",
+    "./preset-mode": "./preset-mode.js",
+    "./penetrate-mode": "./penetrate-mode.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "comfy.js",
+    "runtime-installer.js",
+    "runtime-manifest.json",
+    "github-auth.js",
+    "guide.js",
+    "guide.md",
+    "styles.js",
+    "styles.json",
+    "preset-mode.js",
+    "penetrate-mode.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": ["@deepseek-ai/dsh-client-ui-conversation"]
+    }
+  }
+}
