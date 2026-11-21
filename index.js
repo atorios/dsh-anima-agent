@@ -144,6 +144,17 @@ function detectComfyDir(start) {
   return '';
 }
 
+/**
+ * A checkout only counts as ready when an interpreter sits next to it: main.py
+ * plus comfy/ alone cannot start, so a half-removed bundle must still fall back
+ * to the downloaded runtime instead of silently looking fine.
+ */
+function usableComfyDir(dir) {
+  if (!dir) return false;
+  if (!existsSync(join(dir, 'main.py')) || !existsSync(join(dir, 'comfy'))) return false;
+  return existsSync(join(dir, '.venv', 'Scripts', 'python.exe')) || existsSync(join(dir, 'python-base', 'python.exe'));
+}
+
 const MODEL_PATHS_MARKER = '# added by @local/comfyui-agent';
 
 /**
@@ -220,7 +231,41 @@ export function apply(ctx, config = {}) {
   Object.assign(settings, loadOverrides());
   const bundledDir = detectComfyDir(PLUGIN_DIR);
   const isBundled = () => bundledDir && settings.comfyDir === bundledDir;
-  let externalRuntime = Boolean(settings.comfyDir);
+  // A checkout shipped beside the plugin is this bundle's own ComfyUI, not an
+  // external one. Only a directory the plugin did not ship counts as external.
+  const isExternalDir = (dir) => Boolean(dir) && dir !== bundledDir;
+  const bundledUsable = usableComfyDir(bundledDir);
+  let externalRuntime = isExternalDir(settings.comfyDir);
+  /** Which local source is in charge, for the settings panel. */
+  let localSource = '';
+
+  /** True when something already answers at baseUrl, i.e. the user runs ComfyUI. */
+  const probeServer = async () => {
+    try {
+      const response = await fetch(`${String(settings.baseUrl).replace(/\/+$/, '')}/system_stats`, {
+        signal: AbortSignal.timeout(4000),
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  };
+
+  /**
+   * Pick the local runtime if any can serve. Order matters: a checkout the user
+   * configured wins, then the bundled one, then whatever already answers at
+   * baseUrl. Only when all three fail is a download justified — pulling 8.3 GB
+   * next to a working install is the false "auto prepare" this removes.
+   *
+   * A configured directory is honoured as-is even when it looks incomplete: the
+   * user pointed at it, so the plugin must not second-guess it by downloading.
+   */
+  const localRuntimeSource = async () => {
+    if (externalRuntime) return 'external';
+    if (bundledUsable && isBundled()) return 'bundled';
+    if (await probeServer()) return 'server';
+    return '';
+  };
   // No absolute paths ship with the plugin: when the output directory is unset,
   // derive it from the detected ComfyUI root so a copied folder just works.
   if (!settings.outputDir && settings.comfyDir) {
@@ -236,14 +281,29 @@ export function apply(ctx, config = {}) {
   });
   ctx.effect(() => () => runtime.dispose());
   let runtimeApplied = false;
+  /** One decision per activation: concurrent callers share it, and no tool call
+   *  re-probes baseUrl once the runtime question is settled. */
+  let preparing = null;
+
   const ready = async () => {
-    if (externalRuntime) return;
-    const paths = await runtime.ensure();
-    if (!runtimeApplied && !externalRuntime) {
-      Object.assign(settings, { comfyDir: paths.comfyDir, pythonPath: paths.pythonPath, outputDir: paths.outputDir });
-      client = new ComfyClient({ ...settings, managedRoot: PLUGIN_DIR });
-      runtimeApplied = true;
+    if (localSource || runtimeApplied) return;
+    if (!preparing) {
+      preparing = (async () => {
+        const source = await localRuntimeSource();
+        if (source) {
+          localSource = source;
+          return;
+        }
+        const paths = await runtime.ensure();
+        if (!runtimeApplied) {
+          Object.assign(settings, { comfyDir: paths.comfyDir, pythonPath: paths.pythonPath, outputDir: paths.outputDir });
+          client = new ComfyClient({ ...settings, managedRoot: PLUGIN_DIR });
+          runtimeApplied = true;
+        }
+      })();
+      preparing.catch(() => { preparing = null; });
     }
+    return preparing;
   };
 
   let client = new ComfyClient({ ...settings, managedRoot: isBundled() ? PLUGIN_DIR : undefined });
@@ -284,10 +344,22 @@ export function apply(ctx, config = {}) {
     }
   };
 
+  /**
+   * Truthful runtime status for the settings panel. `idle` must never reach the
+   * UI as "preparing": when a local checkout is in use the phase says so, and
+   * when nothing is managed the panel hides the download block entirely.
+   */
+  const runtimeView = () => {
+    const snapshot = runtime.snapshot();
+    if (runtimeApplied) return { ...snapshot, managed: true, source: 'download' };
+    if (localSource) return { ...snapshot, phase: 'local', managed: false, source: localSource, received: 0 };
+    return { ...snapshot, managed: true, source: 'download' };
+  };
+
   const currentSettings = () => {
     const view = {};
     for (const key of EDITABLE) view[key] = settings[key];
-    return { ...view, runtime: runtime.snapshot() };
+    return { ...view, runtime: runtimeView() };
   };
 
   /** One operation, two callers: the `settings` tool action and the HTTP route. */
@@ -319,8 +391,13 @@ export function apply(ctx, config = {}) {
     writeFileSync(SETTINGS_FILE, JSON.stringify(merged, null, 2), 'utf8');
     Object.assign(settings, applied);
     if (Object.hasOwn(applied, 'comfyDir')) {
-      externalRuntime = Boolean(applied.comfyDir);
+      externalRuntime = isExternalDir(applied.comfyDir);
       runtimeApplied = false;
+      // A directory change reopens the runtime question. Re-evaluate only —
+      // never start a download from a settings write.
+      localSource = '';
+      preparing = null;
+      localRuntimeSource().then((source) => { localSource = source; }).catch(() => {});
     }
     if (applied.comfyDir) ensureModelPaths(settings.comfyDir);
     const next = new ComfyClient({ ...settings, managedRoot: (runtimeApplied && !externalRuntime) || isBundled() ? PLUGIN_DIR : undefined });

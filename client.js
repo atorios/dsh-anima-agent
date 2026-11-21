@@ -489,11 +489,33 @@ window.__ModuleLoader__.load({
         return () => { disposed = true; clearInterval(timer); };
       }, []);
       if (!runtime) return null;
+      // A local checkout needs no download at all: say so and show nothing else,
+      // so an idle server is never reported as "preparing".
+      const local = runtime.managed === false;
+      if (local) {
+        const hint = runtime.source === 'external'
+          ? '已配置 ComfyUI 目录，插件不会下载运行环境，也不改动这个目录里的文件。'
+          : runtime.source === 'server'
+            ? '服务地址上已检测到运行中的 ComfyUI，无需下载运行环境。'
+            : '插件已检测到随包的 ComfyUI，运行环境齐全，无需下载。';
+        return h('div', { style: { ...S.row, padding: 10, border: '1px solid var(--dsw-alias-border-l1, #dcdfe5)', borderRadius: 8 } },
+          h('span', { style: S.label }, runtime.source === 'server' ? '使用正在运行的 ComfyUI' : '使用本机 ComfyUI'),
+          h('span', { style: S.hint }, hint),
+          runtime.error ? h('span', { style: S.bad }, runtime.error) : null,
+        );
+      }
+      const phase = runtime.phase || 'idle';
+      const downloading = phase === 'downloading' || phase === 'verifying' || phase === 'extracting';
+      const label = phase === 'ready' ? '绘画环境已就绪'
+        : phase === 'error' ? '绘画环境准备失败'
+        : phase === 'disposed' ? '绘画环境准备已停止'
+        : downloading ? '正在自动准备绘画环境'
+        : '等待准备绘画环境';
       return h('div', { style: { ...S.row, padding: 10, border: '1px solid var(--dsw-alias-border-l1, #dcdfe5)', borderRadius: 8 } },
-        h('span', { style: S.label }, runtime.phase === 'ready' ? '绘画环境已就绪' : '正在自动准备绘画环境'),
-        h('span', { style: S.hint }, `${runtime.phase || ''} · ${((runtime.received || 0) / 1073741824).toFixed(2)} / ${((runtime.total || 0) / 1073741824).toFixed(2)} GiB`),
-        runtime.phase === 'downloading' ? h('span', { style: S.hint }, `下载速度 ${(speed / 1048576).toFixed(2)} MiB/s`) : null,
-        runtime.total > 0 && runtime.phase !== 'ready' ? h('progress', { value: runtime.received || 0, max: runtime.total, style: { width: '100%' } }) : null,
+        h('span', { style: S.label }, label),
+        h('span', { style: S.hint }, `${phase} · ${((runtime.received || 0) / 1073741824).toFixed(2)} / ${((runtime.total || 0) / 1073741824).toFixed(2)} GiB`),
+        phase === 'downloading' ? h('span', { style: S.hint }, `下载速度 ${(speed / 1048576).toFixed(2)} MiB/s`) : null,
+        downloading ? h('progress', { value: runtime.received || 0, max: runtime.total, style: { width: '100%' } }) : null,
         runtime.error ? h('span', { style: S.bad }, runtime.error) : null,
         h('span', { style: S.hint }, '安装后自动完成准备，无需 BAT 或手动配置；首次出图会等待环境就绪。'),
       );

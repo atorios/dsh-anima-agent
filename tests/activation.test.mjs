@@ -14,13 +14,17 @@ const indexSource = await readFile(new URL('../index.js', import.meta.url), 'utf
 const clientSource = await readFile(new URL('../comfy.js', import.meta.url), 'utf8');
 const manifest = await readFile(new URL('../runtime-manifest.json', import.meta.url), 'utf8');
 
-async function activate(t, config = {}, overrides) {
+async function activate(t, config = {}, overrides, options = {}) {
   assert.equal(typeof vm.SourceTextModule, 'function', 'Run Node with --experimental-vm-modules');
+  // `serverUp: false` models the real reason a runtime gets prepared: nothing is
+  // listening at baseUrl yet. A live server must suppress the download instead.
+  const { serverUp = false } = options;
   const root = join(pluginDir, 'tests', '__activation_fixture__');
   const settingsFile = join(root, 'comfyui.settings.json');
   const files = new Map([[join(root, 'runtime-manifest.json'), manifest]]);
   if (overrides) files.set(settingsFile, JSON.stringify(overrides));
-  const calls = { ensure: 0, disposed: 0, stop: [], spawn: [], fetch: [], clients: [], writes: [] };
+  const calls = { ensure: 0, disposed: 0, stop: [], spawn: [], fetch: [], probe: [], clients: [], writes: [] };
+  let probeDone = false;
   const snapshot = { phase: 'downloading', downloadedBytes: 7, totalBytes: 19 };
   let resolve;
   let reject;
@@ -41,6 +45,15 @@ async function activate(t, config = {}, overrides) {
   const context = vm.createContext({
     URL, AbortSignal, console, setInterval, clearInterval, setTimeout, clearTimeout,
     fetch: async (url) => {
+      // The readiness probe runs once, before any client exists. Keep it in its
+      // own bucket so the client-traffic assertions stay meaningful.
+      const isStats = String(url).endsWith('/system_stats');
+      if (isStats && !probeDone) {
+        probeDone = true;
+        calls.probe.push(url);
+        if (!serverUp) throw new Error('connect ECONNREFUSED');
+        return { ok: true, text: async () => '{}' };
+      }
       calls.fetch.push(url);
       const payload = url.endsWith('/queue')
         ? { queue_running: [], queue_pending: [] }
@@ -162,6 +175,8 @@ async function activate(t, config = {}, overrides) {
     return { status, body: result };
   }
   return { calls, tool, route, dispose, snapshot, files, settingsFile,
+    /** Let activation's readiness probe and installer kickoff settle. */
+    settle() { return new Promise((done) => setTimeout(done, 0)); },
     finish(paths = { comfyDir: join(root, 'runtime', 'ComfyUI'), pythonPath: join(root, 'runtime', 'python.exe'), outputDir: join(root, 'runtime', 'output') }) {
       settled = true;
       snapshot.phase = 'ready';
@@ -173,10 +188,13 @@ async function activate(t, config = {}, overrides) {
 
 test('apply starts installer before any tool call and never launches a bat or server', async t => {
   const h = await activate(t);
+  await h.settle();
+  // Activation probes baseUrl first; with nothing listening it must prepare.
+  assert.deepEqual(h.calls.probe.length, 1, 'activation probes the server once');
   assert.equal(h.calls.ensure, 1);
   assert.equal(h.calls.clients.length, 1);
   assert.deepEqual(h.calls.spawn, []);
-  assert.deepEqual(h.calls.fetch, []);
+  assert.deepEqual(h.calls.fetch, [], 'no client traffic during activation');
   assert.deepEqual(h.calls.writes, []);
 });
 
@@ -184,9 +202,9 @@ test('status waits for deferred ensure and uses the prepared runtime paths', asy
   const h = await activate(t);
   let completed = false;
   const status = h.tool.execute({ action: 'status' }).then(value => { completed = true; return value; });
-  await Promise.resolve();
+  await h.settle();
   assert.equal(completed, false);
-  assert.deepEqual(h.calls.fetch, []);
+  assert.deepEqual(h.calls.fetch, [], 'the client never runs before the runtime is ready');
   const paths = h.finish();
   const result = await status;
   assert.equal(result.ok, true, result.result);
@@ -200,21 +218,23 @@ test('status waits for deferred ensure and uses the prepared runtime paths', asy
   assert.deepEqual(h.calls.spawn, []);
 });
 
-test('settings tool and HTTP GET expose runtime.snapshot without waiting for installation', async t => {
+test('settings tool and HTTP GET report the managed runtime without waiting for installation', async t => {
   const h = await activate(t);
   const result = await h.tool.execute({ action: 'settings' });
   assert.equal(result.ok, true, result.result);
   const settings = JSON.parse(result.result.split('\noverrides file: ')[0]);
-  assert.deepEqual(settings.runtime, h.snapshot);
+  // A download is in flight, so the panel is told it is managed, not local.
+  assert.deepEqual(settings.runtime, { ...h.snapshot, managed: true, source: 'download' });
   const response = await h.route();
   assert.equal(response.status, 200);
-  assert.deepEqual(response.body.runtime, h.snapshot);
+  assert.deepEqual(response.body.runtime, { ...h.snapshot, managed: true, source: 'download' });
   assert.equal(h.calls.ensure, 1);
   assert.deepEqual(h.calls.fetch, []);
 });
 
 test('dispose cancels pending installation and stops the currently owned client', async t => {
   const h = await activate(t);
+  await h.settle();
   const client = h.calls.clients[0];
   client.spawnedPid = 424242;
   await h.dispose();
@@ -231,6 +251,7 @@ test('configured or persisted external comfyDir never invokes installer ensure',
   for (const persisted of [false, true]) {
     const config = { comfyDir: join(pluginDir, 'external-fixture') };
     const h = await activate(t, persisted ? {} : config, persisted ? config : undefined);
+    await h.settle();
     assert.equal(h.calls.ensure, 0);
     const result = await h.tool.execute({ action: 'status' });
     assert.equal(result.ok, true, result.result);
@@ -241,8 +262,34 @@ test('configured or persisted external comfyDir never invokes installer ensure',
   }
 });
 
+// Regression: a running ComfyUI at baseUrl used to be ignored, so activation
+// started an 8.3 GiB download even though the user already had a working server.
+test('a server already answering at baseUrl suppresses the download entirely', async t => {
+  const h = await activate(t, {}, undefined, { serverUp: true });
+  await h.settle();
+  assert.deepEqual(h.calls.probe, ['http://127.0.0.1:8188/system_stats']);
+  assert.equal(h.calls.ensure, 0, 'a live server must never trigger ensure');
+  const response = await h.route();
+  assert.equal(response.body.runtime.managed, false);
+  assert.equal(response.body.runtime.source, 'server');
+  assert.equal(response.body.runtime.phase, 'local');
+  assert.deepEqual(h.calls.writes, []);
+});
+
+// The panel must not claim "preparing" while nothing is being prepared: the
+// reported bug was an idle installer rendered as an active download.
+test('an idle installer is never reported as a managed download in progress', async t => {
+  const h = await activate(t, {}, undefined, { serverUp: true });
+  await h.settle();
+  const response = await h.route();
+  assert.equal(response.body.runtime.managed, false);
+  assert.notEqual(response.body.runtime.phase, 'downloading');
+  assert.equal(response.body.runtime.received, 0);
+});
+
 test('simple mode settings via tool and route retain PID and launch bookkeeping', async t => {
   const h = await activate(t);
+  await h.settle();
   h.finish();
   await h.tool.execute({ action: 'status' });
   const client = h.calls.clients.at(-1);
