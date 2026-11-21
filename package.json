@@ -1,6 +1,6 @@
 {
   "name": "@local/comfyui-agent",
-  "version": "1.2.1",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "description": "Operate a running ComfyUI instance from the Harness: inspect it, build workflows, queue them, and read back results.",
@@ -15,7 +15,6 @@
     "index.js",
     "comfy.js",
     "runtime-installer.js",
-    "scripts/blackwell.py",
     "runtime-manifest.json",
     "github-auth.js",
     "guide.js",
@@ -30,15 +29,11 @@
     "icon.svg"
   ],
   "dsh": {
-    "bundle": {
-      "patch": "./cordis.patch.yml"
-    },
+    "bundle": { "patch": "./cordis.patch.yml" },
     "client": {
       "platform": "web",
       "immediately": true,
-      "inject": [
-        "@deepseek-ai/dsh-client-ui-conversation"
-      ]
+      "inject": ["@deepseek-ai/dsh-client-ui-conversation"]
     }
   }
 }

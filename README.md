@@ -1,4 +1,4 @@
-﻿# DSH Anima Agent
+# DSH Anima Agent
 
 DeepSeek Harness 的 ComfyUI 绘画插件（Windows x64 / NVIDIA）。
 
@@ -12,10 +12,6 @@ DeepSeek Harness 的 ComfyUI 绘画插件（Windows x64 / NVIDIA）。
 不需要预装 ComfyUI、Python 或模型，也不需要跑 BAT。
 
 **环境要求**：Windows x64、已安装兼容的 NVIDIA 驱动；首次准备约 8.3 GB 流量、至少 30 GB 空闲磁盘。
-
-## RTX 50 系兼容支持
-
-使用插件自带的 ComfyUI 时，启动程序会检测当前 GPU。对于计算能力为 `sm_120` 的显卡，插件会先执行一次 CUDA 加法和矩阵乘法。原环境运行失败时，插件从 PyTorch 官方源下载 cu128 组件到独立目录，在当前显卡上验证成功后再启动 ComfyUI。首次修复需要额外数 GB 流量和磁盘空间。使用外部 ComfyUI 的用户需自行管理其 Python 环境。
 
 ## 文件
 

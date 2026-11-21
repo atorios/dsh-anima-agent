@@ -237,7 +237,7 @@ export function apply(ctx, config = {}) {
     const paths = await runtime.ensure();
     if (!runtimeApplied && !externalRuntime) {
       Object.assign(settings, { comfyDir: paths.comfyDir, pythonPath: paths.pythonPath, outputDir: paths.outputDir });
-      client = new ComfyClient({ ...settings, managedRoot: PLUGIN_DIR });
+      client = new ComfyClient(settings);
       runtimeApplied = true;
     }
   };
@@ -282,12 +282,9 @@ export function apply(ctx, config = {}) {
     const merged = { ...loadOverrides(), ...applied };
     writeFileSync(SETTINGS_FILE, JSON.stringify(merged, null, 2), 'utf8');
     Object.assign(settings, applied);
-    if (Object.hasOwn(applied, 'comfyDir')) {
-      externalRuntime = Boolean(applied.comfyDir);
-      runtimeApplied = false;
-    }
+    if (Object.hasOwn(applied, 'comfyDir')) externalRuntime = Boolean(applied.comfyDir);
     if (applied.comfyDir) ensureModelPaths(settings.comfyDir);
-    const next = new ComfyClient({ ...settings, managedRoot: runtimeApplied && !externalRuntime ? PLUGIN_DIR : undefined });
+    const next = new ComfyClient(settings);
     const { _starting, spawnedPid, lastActivity } = client;
     Object.assign(client, next, { _starting, spawnedPid, lastActivity });
     return applied;
