@@ -216,7 +216,9 @@ export function apply(ctx, config = {}) {
   // A file written by the settings action overrides the bundle row, so values
   // survive restarts without editing the profile patch.
   Object.assign(settings, loadOverrides());
-  let externalRuntime = Boolean(config.comfyDir || loadOverrides().comfyDir);
+  const bundledDir = detectComfyDir(PLUGIN_DIR);
+  const isBundled = () => bundledDir && settings.comfyDir === bundledDir;
+  let externalRuntime = Boolean(settings.comfyDir);
   // No absolute paths ship with the plugin: when the output directory is unset,
   // derive it from the detected ComfyUI root so a copied folder just works.
   if (!settings.outputDir && settings.comfyDir) {
@@ -237,12 +239,12 @@ export function apply(ctx, config = {}) {
     const paths = await runtime.ensure();
     if (!runtimeApplied && !externalRuntime) {
       Object.assign(settings, { comfyDir: paths.comfyDir, pythonPath: paths.pythonPath, outputDir: paths.outputDir });
-      client = new ComfyClient(settings);
+      client = new ComfyClient({ ...settings, managedRoot: PLUGIN_DIR });
       runtimeApplied = true;
     }
   };
 
-  let client = new ComfyClient(settings);
+  let client = new ComfyClient({ ...settings, managedRoot: isBundled() ? PLUGIN_DIR : undefined });
   ctx.effect(() => () => { client.stopOwned().catch(() => {}); });
   // Installing this bundle authorizes automatic preparation; errors remain visible.
   ready().catch(() => {});
@@ -282,9 +284,12 @@ export function apply(ctx, config = {}) {
     const merged = { ...loadOverrides(), ...applied };
     writeFileSync(SETTINGS_FILE, JSON.stringify(merged, null, 2), 'utf8');
     Object.assign(settings, applied);
-    if (Object.hasOwn(applied, 'comfyDir')) externalRuntime = Boolean(applied.comfyDir);
+    if (Object.hasOwn(applied, 'comfyDir')) {
+      externalRuntime = Boolean(applied.comfyDir);
+      runtimeApplied = false;
+    }
     if (applied.comfyDir) ensureModelPaths(settings.comfyDir);
-    const next = new ComfyClient(settings);
+    const next = new ComfyClient({ ...settings, managedRoot: (runtimeApplied && !externalRuntime) || isBundled() ? PLUGIN_DIR : undefined });
     const { _starting, spawnedPid, lastActivity } = client;
     Object.assign(client, next, { _starting, spawnedPid, lastActivity });
     return applied;
