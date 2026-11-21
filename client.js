@@ -90,6 +90,7 @@ window.__ModuleLoader__.load({
 
     const ENDPOINT = '/comfyui-agent/settings';
     const MODELS_ENDPOINT = '/comfyui-agent/models';
+    const ENVIRONMENT_ENDPOINT = '/comfyui-agent/environment';
     const STYLES_ENDPOINT = '/comfyui-agent/styles';
     const STYLE_IMAGE_ENDPOINT = '/comfyui-agent/style-image';
 
@@ -159,6 +160,26 @@ window.__ModuleLoader__.load({
         background: 'var(--dsw-alias-bg-layer-2, #eef0f4)',
         border: '1px solid var(--dsw-alias-border-l2, #b8bec9)',
       },
+      checkButton: {
+        ...STYLES.button,
+        padding: '7px 14px',
+        fontSize: 12,
+        fontWeight: 500,
+        background: 'var(--dsw-alias-bg-layer-2, #eef0f4)',
+        border: '1px solid var(--dsw-alias-border-l2, #b8bec9)',
+      },
+      envBox: {
+        marginTop: 12,
+        padding: 12,
+        borderRadius: 6,
+        background: 'var(--dsw-alias-bg-layer-2, #f8f9fa)',
+        border: '1px solid var(--dsw-alias-border-l2, #d0d5dd)',
+        fontSize: 12,
+        lineHeight: '18px',
+      },
+      envRow: { display: 'flex', gap: 8, marginBottom: 6 },
+      envLabel: { fontWeight: 500, minWidth: 90, color: 'var(--dsw-alias-label-secondary, #6b7280)' },
+      envValue: { color: 'var(--dsw-alias-label-primary, #1a1a1a)', flex: 1, wordBreak: 'break-all' },
       ok: { color: 'var(--dsw-alias-state-success-primary, #1f9254)', fontSize: 12 },
       bad: { color: 'var(--dsw-alias-state-error-primary, #c62828)', fontSize: 12 },
     };
@@ -170,6 +191,9 @@ window.__ModuleLoader__.load({
       const [models, setModels] = useState(null);
       const [modelStatus, setModelStatus] = useState({ kind: 'idle', text: '' });
       const [uploading, setUploading] = useState(false);
+      const [envCheck, setEnvCheck] = useState(null);
+      const [envChecking, setEnvChecking] = useState(false);
+
       const load = useCallback(() => {
         setStatus({ kind: 'idle', text: '' });
         fetch(ENDPOINT, { headers: { accept: 'application/json' } })
@@ -243,6 +267,16 @@ window.__ModuleLoader__.load({
             setUploading(false);
             event.target.value = '';
           });
+      };
+
+      const checkEnv = () => {
+        setEnvChecking(true);
+        setEnvCheck(null);
+        fetch(ENVIRONMENT_ENDPOINT, { headers: { accept: 'application/json' } })
+          .then((response) => response.json())
+          .then((payload) => setEnvCheck(payload))
+          .catch((error) => setEnvCheck({ status: 'error', message: '检测失败：' + (error?.message || error), gpu: '', torch: '', cuda: '' }))
+          .finally(() => setEnvChecking(false));
       };
 
       if (!values && status.kind !== 'error') {
@@ -412,6 +446,26 @@ window.__ModuleLoader__.load({
             modelStatus.kind === 'error' ? h('span', { style: S.bad }, modelStatus.text) : null,
           ),
           h('span', { style: S.hint }, '上传的文件写入 models\\loras，支持 .safetensors / .pt / .ckpt / .bin，单个上限 2 GB。'),
+        ),
+        h('hr', { style: { border: 'none', borderTop: '1px solid var(--dsw-alias-border-l1, #dcdfe5)', margin: '12px 0' } }),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
+          h('div', { style: { ...S.label, fontSize: 13 } }, '环境自检'),
+          h('span', { style: S.hint }, '检测当前配置的 Python 环境、显卡型号、PyTorch 版本和 CUDA 运算能力。'),
+          h(
+            'div',
+            { style: S.bar },
+            h('button', { type: 'button', style: S.checkButton, onClick: checkEnv, disabled: envChecking }, envChecking ? '检测中…' : '开始检测'),
+          ),
+          envCheck
+            ? h(
+                'div',
+                { style: S.envBox },
+                h('div', { style: S.envRow }, h('span', { style: S.envLabel }, '显卡'), h('span', { style: S.envValue }, envCheck.gpu || '未检测到')),
+                h('div', { style: S.envRow }, h('span', { style: S.envLabel }, 'PyTorch'), h('span', { style: S.envValue }, envCheck.torch || '未安装')),
+                h('div', { style: S.envRow }, h('span', { style: S.envLabel }, 'CUDA'), h('span', { style: S.envValue }, envCheck.cuda || '不可用')),
+                h('div', { style: S.envRow }, h('span', { style: S.envLabel }, '状态'), h('span', { style: envCheck.status === 'ok' ? S.ok : S.bad }, envCheck.message || '未知')),
+              )
+            : null,
         ),
         h(StyleLibrary, { key: 'styles' }),
       );

@@ -46,6 +46,8 @@ const SETTINGS_ROUTE = '/comfyui-agent/settings';
 
 const MODELS_ROUTE = '/comfyui-agent/models';
 
+const ENVIRONMENT_ROUTE = '/comfyui-agent/environment';
+
 const STYLES_ROUTE = '/comfyui-agent/styles';
 
 const STYLE_IMAGE_ROUTE = '/comfyui-agent/style-image';
@@ -249,6 +251,38 @@ export function apply(ctx, config = {}) {
   // Installing this bundle authorizes automatic preparation; errors remain visible.
   ready().catch(() => {});
   const attachments = ctx.get('attachments');
+
+  /** Diagnose the GPU environment with the current Python. */
+  const checkEnvironment = async () => {
+    const python = settings.pythonPath || (settings.comfyDir ? join(settings.comfyDir, '.venv', 'Scripts', 'python.exe') : '');
+    if (!python) {
+      return { status: 'error', message: '未配置 Python 路径', gpu: '', torch: '', cuda: '' };
+    }
+    const cacheRoot = (runtimeApplied && !externalRuntime) || isBundled() ? join(PLUGIN_DIR, 'runtime-cache', 'gpu') : join(dirname(python), '..', '..', 'runtime-cache', 'gpu');
+    const script = join(PLUGIN_DIR, 'scripts', 'blackwell.py');
+    try {
+      const { spawn } = await import('node:child_process');
+      const child = spawn(python, ['-s', script, '--diagnose', cacheRoot], {
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 60000,
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; });
+      child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
+      const code = await new Promise((resolve, reject) => {
+        child.once('error', reject);
+        child.once('close', resolve);
+      });
+      if (code !== 0) {
+        return { status: 'error', message: `检测脚本失败 (退出码 ${code})`, gpu: '', torch: '', cuda: '' };
+      }
+      return JSON.parse(stdout);
+    } catch (error) {
+      return { status: 'error', message: `检测失败: ${error?.message || error}`, gpu: '', torch: '', cuda: '' };
+    }
+  };
 
   const currentSettings = () => {
     const view = {};
@@ -674,6 +708,30 @@ export function apply(ctx, config = {}) {
           } catch (error) {
             res.writeHead(500, { 'content-type': 'application/json' });
             res.end(JSON.stringify({ error: error?.message || String(error) }));
+          }
+        },
+      }),
+    );
+
+    webCtx.effect(() =>
+      webCtx.webServer.register({
+        kind: 'exact',
+        path: ENVIRONMENT_ROUTE,
+        async handler(req, res) {
+          const reply = (status, payload) => {
+            const body = JSON.stringify(payload);
+            res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+            res.end(body);
+          };
+          if (req.method !== 'GET') {
+            reply(405, { error: 'GET only' });
+            return;
+          }
+          try {
+            const result = await checkEnvironment();
+            reply(200, result);
+          } catch (error) {
+            reply(500, { status: 'error', message: error?.message || String(error), gpu: '', torch: '', cuda: '' });
           }
         },
       }),

@@ -22,16 +22,25 @@ INDEX = 'https://download.pytorch.org/whl/cu128'
 OTHER_GPU, UNKNOWN_GPU, FAILED_SMOKE = 20, 21, 22
 
 
-def probe(overlay):
+def diagnostic_result():
+    return dict(gpu=None, torch=None, cuda=None, status='error', message='')
+
+
+def probe(overlay, report=None):
     # Run in a child so that a broken CUDA context or loaded DLL cannot affect
     # subsequent validation. Exit codes keep dependency chatter off stdout.
     try:
         import torch
+        if report is not None:
+            report.update(torch=str(torch.__version__), cuda=torch.version.cuda)
+            report['gpu'] = torch.cuda.get_device_name()
         capability = torch.cuda.get_device_capability()
     except Exception as exc:
+        if report is not None:
+            report['message'] = f'无法查询 PyTorch 或 CUDA 设备：{exc}'
         print(f'CUDA device query failed: {exc}', file=sys.stderr)
         return UNKNOWN_GPU
-    if capability != (12, 0):
+    if capability != (12, 0) and (report is None or overlay):
         return OTHER_GPU
     try:
         if overlay:
@@ -47,8 +56,13 @@ def probe(overlay):
         if value != 16:
             raise RuntimeError(f'CUDA smoke test returned {value}, expected 16')
     except Exception as exc:
+        if report is not None:
+            report['message'] = f'CUDA 运算验证失败：{exc}'
         print(f'CUDA smoke test failed: {exc}', file=sys.stderr)
-        return FAILED_SMOKE
+        return FAILED_SMOKE if capability == (12, 0) else OTHER_GPU
+    if report is not None:
+        source = '已缓存的 cu128 环境' if overlay else '原环境'
+        report.update(status='ok', message=f'{source}通过 CUDA 加法和矩阵乘法验证。')
     return 0
 
 
@@ -60,15 +74,15 @@ def run_probe(overlay=None):
                           env=env, stdout=sys.stderr, timeout=180).returncode
 
 
-def smi_blackwell():
+def smi_rows(*fields):
     visible = os.environ.get('CUDA_VISIBLE_DEVICES')
     first = visible.split(',')[0].strip() if visible is not None else None
     if first in ('', '-1'):
-        return False
+        return []
     smi = shutil.which('nvidia-smi')
     if smi is None:
-        return False
-    result = subprocess.run([smi, '--query-gpu=index,uuid,compute_cap', '--format=csv,noheader,nounits'],
+        return []
+    result = subprocess.run([smi, '--query-gpu=index,uuid,' + ','.join(fields), '--format=csv,noheader,nounits'],
                             capture_output=True, text=True, timeout=30)
     if result.returncode:
         raise RuntimeError(f'nvidia-smi device query failed: {result.stderr.strip()}')
@@ -79,7 +93,11 @@ def smi_blackwell():
     # numeric ordinals when the process explicitly uses PCI bus ordering.
     elif os.environ.get('CUDA_DEVICE_ORDER') == 'PCI_BUS_ID':
         rows = [row for row in rows if row[0] == (first or '0')]
-    choices = {row[2] == '12.0' for row in rows}
+    return rows
+
+
+def smi_blackwell():
+    choices = {row[2] == '12.0' for row in smi_rows('compute_cap')}
     if len(choices) > 1:
         raise RuntimeError('Cannot identify the active GPU; set CUDA_VISIBLE_DEVICES to its GPU UUID')
     return True in choices
@@ -107,12 +125,16 @@ def install_lock(path):
         yield
 
 
+def cache_prefix():
+    return f'blackwell-{PINS["torch"]}-{sys.implementation.cache_tag}-{sysconfig.get_platform()}'
+
+
 def prepare(destination):
     base = run_probe()
     if base in (0, OTHER_GPU) or (base != FAILED_SMOKE and not smi_blackwell()):
         return None
     destination.mkdir(parents=True, exist_ok=True)
-    prefix = f'blackwell-{PINS["torch"]}-{sys.implementation.cache_tag}-{sysconfig.get_platform()}'
+    prefix = cache_prefix()
     with install_lock(destination / (prefix + '.lock')):
         for existing in sorted(destination.glob(prefix + '-*')):
             if existing.is_dir() and run_probe(existing) == 0:
@@ -135,7 +157,49 @@ def prepare(destination):
             return published
 
 
+def read_probe(overlay=None):
+    env = dict(os.environ, CUDA_CACHE_DISABLE='1', PYTHONDONTWRITEBYTECODE='1', PYTHONIOENCODING='utf-8')
+    if overlay:
+        env['PYTHONPATH'] = os.pathsep.join(filter(None, (str(overlay), env.get('PYTHONPATH'))))
+    try:
+        result = subprocess.run([sys.executable, '-B', '-s', str(Path(__file__).resolve()),
+                                 '--inspect', str(overlay or '')], env=env, capture_output=True, timeout=180)
+        return result.returncode, json.loads(result.stdout)
+    except (ValueError, OSError, subprocess.SubprocessError) as exc:
+        report = diagnostic_result()
+        report['message'] = f'无法读取 CUDA 检测进程的结果：{exc}'
+        return UNKNOWN_GPU, report
+
+
+def diagnose(destination):
+    code, report = read_probe()
+    if code == 0:
+        return report
+    try:
+        if not report['gpu']:
+            report['gpu'] = ' / '.join(dict.fromkeys(row[2] for row in smi_rows('name'))) or None
+        if code == FAILED_SMOKE or (code != OTHER_GPU and smi_blackwell()):
+            for existing in sorted(destination.glob(cache_prefix() + '-*')):
+                if existing.is_dir():
+                    status, candidate = read_probe(existing)
+                    if status == 0:
+                        return candidate
+            report['message'] += '。未找到通过验证的 cu128 缓存。'
+    except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+        report['message'] += f'。读取显卡或缓存信息失败：{exc}'
+    return report
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == '--inspect':
+        report = diagnostic_result()
+        with contextlib.redirect_stdout(sys.stderr):
+            code = probe(sys.argv[2], report)
+        print(json.dumps(report))
+        return code
+    if len(sys.argv) == 3 and sys.argv[1] == '--diagnose':
+        print(json.dumps(diagnose(Path(sys.argv[2]).absolute())))
+        return 0
     if len(sys.argv) == 3 and sys.argv[1] == '--probe':
         return probe(sys.argv[2])
     if len(sys.argv) != 2:
