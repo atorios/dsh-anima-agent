@@ -6,7 +6,21 @@
  */
 
 import { spawn } from 'node:child_process';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
+
+async function prepareGpu(python, root, cwd) {
+  const probe = spawn(python, ['-s', join(root, 'scripts', 'blackwell.py'), join(root, 'runtime-cache', 'gpu')], {
+    cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let result = '', diagnostic = '';
+  probe.stdout.setEncoding('utf8').on('data', chunk => { result = (result + chunk).slice(-8192); });
+  probe.stderr.setEncoding('utf8').on('data', chunk => { diagnostic = (diagnostic + chunk).slice(-4000); });
+  await new Promise((resolve, reject) => {
+    probe.once('error', reject);
+    probe.once('close', code => code === 0 ? resolve() : reject(new ComfyError(`GPU 环境检查失败 (${code})：${diagnostic.trim()}`)));
+  });
+  return JSON.parse(result);
+}
 
 const DEFAULT_BASE_URL = 'http://127.0.0.1:8188';
 
@@ -55,6 +69,7 @@ export class ComfyClient {
     this.outputDir = String(config.outputDir || '').replace(/[\\/]+$/, '');
     this.comfyDir = String(config.comfyDir || '').replace(/[\\/]+$/, '');
     this.pythonPath = String(config.pythonPath || '');
+    this.managedRoot = config.managedRoot;
     this.startArgs = Array.isArray(config.startArgs) ? config.startArgs : [];
     this.startTimeoutMs = Number(config.startTimeoutMs) || 180000;
     this.port = new URL(this.baseUrl).port || '8188';
@@ -97,10 +112,20 @@ export class ComfyClient {
 
   async launchAndWait() {
     const python = this.pythonPath || join(this.comfyDir, '.venv', 'Scripts', 'python.exe');
-    const args = this.startArgs.length > 0 ? this.startArgs : ['-s', 'main.py', '--port', this.port];
+    const args = this.startArgs.length > 0 ? [...this.startArgs] : ['-s', 'main.py', '--port', this.port];
+    let env = process.env;
+    if (this.managedRoot && process.platform === 'win32' && !args.includes('--cpu')) {
+      const gpu = await prepareGpu(python, this.managedRoot, this.comfyDir);
+      if (gpu.overlay) {
+        const key = Object.keys(env).find(name => name.toUpperCase() === 'PYTHONPATH') || 'PYTHONPATH';
+        env = { ...env, [key]: [gpu.overlay, env[key]].filter(Boolean).join(delimiter) };
+      }
+      if (gpu.disableXformers && !args.includes('--disable-xformers')) args.push('--disable-xformers');
+    }
     let child;
     try {
       child = spawn(python, args, {
+        env,
         cwd: this.comfyDir,
         detached: true,
         stdio: 'ignore',
