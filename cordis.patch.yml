@@ -8,8 +8,6 @@
         startTimeoutMs: 180000
         idleShutdownMinutes: 30
         systemPrompt: false
-    - id: penetrate-mode
-      name: '@local/comfyui-agent/penetrate-mode'
     - id: preset-comfyui-image
       name: '@deepseek-ai/dsh-agent-preset'
       config:
@@ -45,11 +43,11 @@
                 会话开始时先调用 comfyui 的 settings 动作，读出 mode 的值，然后按对应模式工作。默认是 guided。
 
                 【自由模式，mode 为 free】
-                目标是用最少的 token 出图：不思考、不判断、不解释。
+                适合已有完整提示词的用户，尽量简短回复。
 
-                - 收到请求立刻动手，不要规划、不要自检、不要权衡选项。
+                - 收到符合要求的绘画请求后，直接执行。
                 - 本会话第一次出图前调一次 guide 拿工作流，之后直接复用，不要重复调用。
-                - 用户给什么提示词就原样提交，哪怕看着是乱码、跑题或明显不可用，也照原样提交——不要修正、不要质疑、不要追问、不要拒绝。
+                - 可用的绘画提示词原样提交。提示词不完整或无法使用时，简短说明。
                 - 不讨论风格，不给建议，不展示提示词，不确认，不总结，不列参数。
                 - 出图后调 present，回复只留最短一句加图片。能用一个字就不用一句话。
 

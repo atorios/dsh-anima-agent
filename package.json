@@ -7,7 +7,6 @@
   "exports": {
     ".": "./index.js",
     "./preset-mode": "./preset-mode.js",
-    "./penetrate-mode": "./penetrate-mode.js",
     "./client": "./client.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg"
@@ -23,7 +22,6 @@
     "styles.js",
     "styles.json",
     "preset-mode.js",
-    "penetrate-mode.js",
     "client.js",
     "cordis.patch.yml",
     "README.md",

@@ -89,7 +89,6 @@ window.__ModuleLoader__.load({
     }
 
     const ENDPOINT = '/comfyui-agent/settings';
-    const PENETRATE_ENDPOINT = '/penetrate/settings';
     const MODELS_ENDPOINT = '/comfyui-agent/models';
     const STYLES_ENDPOINT = '/comfyui-agent/styles';
     const STYLE_IMAGE_ENDPOINT = '/comfyui-agent/style-image';
@@ -106,7 +105,7 @@ window.__ModuleLoader__.load({
       {
         value: 'free',
         label: '自由模式',
-        hint: '无条件进行图片生成，哪怕提示词无法使用。推荐已有完整提示词时使用。',
+        hint: '适合已有完整提示词时使用，直接提交符合要求的绘画请求。',
       },
       {
         value: 'guided',
@@ -171,36 +170,6 @@ window.__ModuleLoader__.load({
       const [models, setModels] = useState(null);
       const [modelStatus, setModelStatus] = useState({ kind: 'idle', text: '' });
       const [uploading, setUploading] = useState(false);
-      const [penetrate, setPenetrate] = useState(null);
-      const [penetrateStatus, setPenetrateStatus] = useState({ kind: 'idle', text: '' });
-
-      const loadPenetrate = useCallback(() => {
-        fetch(PENETRATE_ENDPOINT, { headers: { accept: 'application/json' } })
-          .then((response) => response.json())
-          .then((payload) => setPenetrate(payload?.enabled === true))
-          .catch(() => setPenetrate(null));
-      }, []);
-
-      const togglePenetrate = (next) => {
-        setPenetrate(next);
-        setPenetrateStatus({ kind: 'idle', text: '' });
-        fetch(PENETRATE_ENDPOINT, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ enabled: next }),
-        })
-          .then((response) => response.json())
-          .then((payload) => {
-            if (payload?.error) throw new Error(payload.error);
-            setPenetrate(payload.enabled === true);
-            setPenetrateStatus({ kind: 'ok', text: next ? '已开启，新会话生效' : '已关闭' });
-          })
-          .catch((error) => {
-            setPenetrate(!next);
-            setPenetrateStatus({ kind: 'error', text: '保存失败：' + (error?.message || error) });
-          });
-      };
-
       const load = useCallback(() => {
         setStatus({ kind: 'idle', text: '' });
         fetch(ENDPOINT, { headers: { accept: 'application/json' } })
@@ -226,8 +195,7 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         load();
         loadModels();
-        loadPenetrate();
-      }, [load, loadModels, loadPenetrate]);
+      }, [load, loadModels]);
 
       const setField = (key, raw) => setValues((current) => ({ ...current, [key]: raw }));
 
@@ -370,32 +338,6 @@ window.__ModuleLoader__.load({
             { style: S.hint },
             (values.mode === 'free' ? MODE_OPTIONS[0] : MODE_OPTIONS[1]).hint,
           ),
-        ),
-        h(
-          'div',
-          { style: S.row },
-          h(
-            'label',
-            {
-              style: { ...S.label, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' },
-            },
-            h('input', {
-              type: 'checkbox',
-              checked: penetrate === true,
-              disabled: penetrate === null,
-              onChange: (event) => togglePenetrate(event.target.checked),
-              style: { margin: 0, width: 14, height: 14, cursor: 'pointer' },
-            }),
-            '破甲',
-          ),
-          h(
-            'span',
-            { style: S.hint },
-            '勾选后你懂的，要和自由模式一起使用，并在模型选择那里把思考强度选为off，推荐使用deepseek-flash官模。第一个新对话被拦截是正常的，通常需要开启2-3个对话就可以正常出图了',
-          ),
-          penetrateStatus.kind === 'ok' ? h('span', { style: S.ok }, penetrateStatus.text) : null,
-          penetrateStatus.kind === 'error' ? h('span', { style: S.bad }, penetrateStatus.text) : null,
-          penetrate === null ? h('span', { style: S.hint }, '破甲插件未加载，开关不可用') : null,
         ),
         h(
           'div',

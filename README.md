@@ -24,7 +24,6 @@ DeepSeek Harness 的 ComfyUI 绘画插件（Windows x64 / NVIDIA）。
 | `comfy.js` | ComfyUI HTTP 客户端 |
 | `styles.js` / `styles.json` | 画风库（本版为空） |
 | `preset-mode.js` | 会话级工具隔离 |
-| `penetrate-mode.js` | 穿透模式，接第三方模型 |
 | `client.js` | 设置页签与状态徽标 |
 | `cordis.patch.yml` | 插件行与「绘画模式」预设 |
 | `guide.md` | 出图手册 |
